@@ -991,8 +991,7 @@ void httpNetworkconfigCallback(){
     String payload="{";
     payload+="\"ipAddress\":\""+String(g_networkConfig.ip[0])+"."+String(g_networkConfig.ip[1])+"."+String(g_networkConfig.ip[2])+"."+String(g_networkConfig.ip[3])+"\",";
     payload+="\"gatewayIp\":\""+String(g_networkConfig.gatewayIp[0])+"."+String(g_networkConfig.gatewayIp[1])+"."+String(g_networkConfig.gatewayIp[2])+"."+String(g_networkConfig.gatewayIp[3])+"\",";
-    payload+="\"networkMasks\":\""+String(g_networkConfig.masks[0])+"."+String(g_networkConfig.masks[1])+"."+String(g_networkConfig.masks[2])+"."+String(g_networkConfig.masks[3])+"\",";
-    payload+="\"errorFeedbackIp\":\""+String(g_networkConfig.errorFeedbackIp[0])+"."+String(g_networkConfig.errorFeedbackIp[1])+"."+String(g_networkConfig.errorFeedbackIp[2])+"."+String(g_networkConfig.errorFeedbackIp[3])+"\"";
+    payload+="\"networkMasks\":\""+String(g_networkConfig.masks[0])+"."+String(g_networkConfig.masks[1])+"."+String(g_networkConfig.masks[2])+"."+String(g_networkConfig.masks[3])+"\"";
     payload+='}';
     g_server.send(200, F("text/html"),payload);
     return;
@@ -1640,12 +1639,6 @@ bool setNetworkConfigFromJson(String inputJsonString){
       return false;
     }
   }
-  if(currentJson.containsKey("errorFeedbackIp")){
-    String errorFbIpReceived=currentJson["errorFeedbackIp"];
-	  if(!stringIpToByte(errorFbIpReceived,g_networkConfig.errorFeedbackIp)){
-      return false;
-    }
-  }
   return true;
 }
 
@@ -1770,7 +1763,7 @@ void writeConfigToEeprom(){
     ip Address	                  1-4
     ip gateway	                  5-8
     network masks	                9-12
-    errorFeedbackIp	              13-16
+    errorFeedbackIp	              13-16 <- Deprecated
     boardNumber	                  17
     UNUSED      	                18
     Kp	                          19-22
@@ -1792,8 +1785,8 @@ void writeConfigToEeprom(){
     mqttSetPointFeedbackEnabled	  61
     mqttTimeStampFeedbackEnabled	62
     publishPeriod	                63-66
-    httpErrorEnabled	            67
-    httpWarningEnabled	          68
+    httpErrorEnabled	            67 <- Deprecated
+    httpWarningEnabled	          68 <- Deprecated
     mqttErrorEnabled	            69
     mqttWarningEnabled	          70
   */
@@ -1933,8 +1926,8 @@ void readConfigFromEeprom(){
   g_networkConfig.masks[1]=g_eepromImage[10];
   g_networkConfig.masks[2]=g_eepromImage[11];
   g_networkConfig.masks[3]=g_eepromImage[12];
-
-  g_networkConfig.errorFeedbackIp[0]=g_eepromImage[13];
+  // deprecated :
+  g_networkConfig.errorFeedbackIp[0]=g_eepromImage[13]; 
   g_networkConfig.errorFeedbackIp[1]=g_eepromImage[14];
   g_networkConfig.errorFeedbackIp[2]=g_eepromImage[15];
   g_networkConfig.errorFeedbackIp[3]=g_eepromImage[16];
@@ -2007,9 +2000,9 @@ void readConfigFromEeprom(){
   tempFloat.ui8[3]=g_eepromImage[66];
   g_mqttConfig.feedbackPublishPeriod=tempFloat.f;
 
-  g_errorFeedbackSettings.httpErrorEnabled=g_eepromImage[67]!=0;
+  g_errorFeedbackSettings.httpErrorEnabled=g_eepromImage[67]!=0; // deprecated
   
-  g_errorFeedbackSettings.httpWarningEnabled=g_eepromImage[68]!=0;
+  g_errorFeedbackSettings.httpWarningEnabled=g_eepromImage[68]!=0; //deprecated
   
   g_errorFeedbackSettings.mqttErrorEnabled=g_eepromImage[69]!=0;
   
