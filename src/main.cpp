@@ -82,6 +82,8 @@ struct mqttConfiguration{
   bool setpointFeedbackEnabled;
   bool timeStampFeedbackEnabled;
 
+  bool errorFeedbackEnabled;
+
   float feedbackPublishPeriod;
 
   char userName[MQTT_CRED_MAXSIZE+1];
@@ -207,7 +209,6 @@ void httpJogCallback();
 void httpAbortCallback();
 void httpTrajLinearCallback();
 void httpMqttConfigCallback();
-void httpErrorAndWarningCallback();
 void httpQueueCallback();
 void httpRebootCallback();
 
@@ -804,36 +805,21 @@ void processErrorCodes(){
   if(g_errorCodesFromSlave==0){
     return;
   }
+  Serial.print("Error code from slave : ");
+  Serial.println(g_errorCodesFromSlave);
   
   // Do a post if http feedback is enabled
   // Do a publish if mqtt feedback is enabled
   String payload="{";
   payload+="\"code\":"+String(g_errorCodesFromSlave)+",";
   payload+="\"timeStamp\":"+String(millis())+",";
-  payload+="\"description\":";
-  if(g_errorCodesFromSlave==ERRCODE_LIMITABORT)
-    payload=+"\"Error limit triggered, motion aborted\"";
-  payload+="}";
-  
-  if(g_errorFeedbackSettings.httpErrorEnabled){ // todo : does not work
-    HTTPClient httpClient;
-    String masterPath="http://";
-    masterPath+=String(g_networkConfig.errorFeedbackIp[0])+".";
-    masterPath+=String(g_networkConfig.errorFeedbackIp[1])+".";
-    masterPath+=String(g_networkConfig.errorFeedbackIp[2])+".";
-    masterPath+=String(g_networkConfig.errorFeedbackIp[3]);
-    masterPath+=":80";
-    char urlFollowup[15];
-    sprintf(urlFollowup,"/motor%02d/error",g_boardNumber);
-    masterPath+=String(urlFollowup);
-    
-    httpClient.begin(masterPath.c_str());
-    httpClient.addHeader("Content-Type", "text/plain");
-    int responseCode=httpClient.POST("message="+payload);
-    httpClient.end();
+  payload+="\"description\":\"";
+  if(g_errorCodesFromSlave==ERRCODE_LIMITABORT){
+    payload+="Error limit triggered, motion aborted. Closed loop disabled, motor off";
   }
+  payload+="\"}";
   
-  if(g_mqttConfig.enabled && g_mqttClient.connected() && g_errorFeedbackSettings.mqttErrorEnabled){
+  if(g_mqttConfig.enabled && g_mqttConfig.errorFeedbackEnabled){
 	  g_mqttClient.publish(g_mqttTopics.errorFeedback,payload.c_str());
   }
   g_errorCodesFromSlave=0;
@@ -877,7 +863,6 @@ void initializeEthernetConnection()
   g_server.on(F("/abort"),httpAbortCallback);
   g_server.on(F("/trajectory/linear"),httpTrajLinearCallback);
   g_server.on(F("/mqttConfig"),httpMqttConfigCallback);
-  g_server.on(F("/errorFeedbackConfig"),httpErrorAndWarningCallback);
   g_server.on(F("/queue"),httpQueueCallback);
   g_server.on(F("/reboot"),httpRebootCallback);
   g_server.onNotFound(httpNotFoundCallback);
@@ -1064,8 +1049,8 @@ void httpMotorStatusCallback(){
     if(g_isMotorOn) payload+="true,";
     else payload+="false,";
     payload+="\"closedLoopEnabled\":";
-    if(g_closedLoopEnabled) payload+="true,";
-    else payload+="false,";
+    if(g_closedLoopEnabled) payload+="true";
+    else payload+="false";
     payload+="}";
    
     g_server.send(200, F("text/html"),payload);
@@ -1361,8 +1346,12 @@ void httpMqttConfigCallback(){
       g_mqttConfig.setpointFeedbackEnabled=currentJson["setPointFeedbackEnabled"];
     }
 
+    if(currentJson.containsKey("errorFeedbackEnabled")){
+      g_mqttConfig.timeStampFeedbackEnabled=currentJson["errorFeedbackEnabled"];
+    }
+
     if(currentJson.containsKey("timeStampFeedbackEnabled")){
-      g_mqttConfig.timeStampFeedbackEnabled=currentJson["timeStampFeedbackEnabled"];
+      g_mqttConfig.errorFeedbackEnabled=currentJson["timeStampFeedbackEnabled"];
     }
 
     if(currentJson.containsKey("publishPeriod")){
@@ -1391,79 +1380,41 @@ void httpMqttConfigCallback(){
                               +String(g_mqttConfig.brokerIp[2])+"."
                               +String(g_mqttConfig.brokerIp[3])+"\",";
     payload+="\"brokerPort\":"+String(g_mqttConfig.brokerPort)+String(",");
+
     payload+="\"mqttEnabled\":";
     if(g_mqttConfig.enabled) payload+="true,";
     else payload+="false,";
+
     payload+="\"boardNumber\":"+String(g_boardNumber)+",";
+
     payload+="\"positionFeedbackEnabled\":";
     if(g_mqttConfig.positionFeedbackEnabled) payload+="true,";
     else payload+="false,";
+
     payload+="\"positionFeedbackEnabled\":";
     if(g_mqttConfig.positionFeedbackEnabled) payload+="true,";
     else payload+="false,";
+
     payload+="\"encoderFeedbackEnabled\":";
     if(g_mqttConfig.encoderFeedbackEnabled) payload+="true,";
     else payload+="false,";
+
     payload+="\"setPointFeedbackEnabled\":";
     if(g_mqttConfig.setpointFeedbackEnabled) payload+="true,";
     else payload+="false,";
+
     payload+="\"timeStampFeedbackEnabled\":";
     if(g_mqttConfig.timeStampFeedbackEnabled) payload+="true,";
     else payload+="false,";
+
+    payload+="\"errorFeedbackEnabled\":";
+    if(g_mqttConfig.errorFeedbackEnabled) payload+="true,";
+    else payload+="false,";
+
     payload+="\"publishPeriod\":"+String(g_mqttConfig.feedbackPublishPeriod)+",";
     payload+="\"username\":\""+String(g_mqttConfig.userName)+"\"";
     payload+="}";
 
-    g_server.send(200, F("text/html"),payload);
-  }else{
-    g_server.send(405, F("text/html"),"Method Not Allowed");
-  }
-}
-
-void httpErrorAndWarningCallback(){
-  if(g_server.method()==HTTP_PUT){
-    Serial.println("Incoming PUT to Error and Warning Configuration");
-    String payload=g_server.arg("plain");
-    DynamicJsonDocument currentJson(512);
-    DeserializationError jsonErr=deserializeJson(currentJson, payload);
-    if(jsonErr){
-      Serial.print("JSON error : ");
-      Serial.println(jsonErr.c_str());
-      g_server.send(400,F("text/html"), "Bad Request");
-      return;
-    }
-
-    if(currentJson.containsKey("httpErrorEnabled")){
-      g_errorFeedbackSettings.httpErrorEnabled=currentJson["httpErrorEnabled"];
-    }
-    if(currentJson.containsKey("httpWarningEnabled")){
-      g_errorFeedbackSettings.httpWarningEnabled=currentJson["httpWarningEnabled"];
-    }
-    if(currentJson.containsKey("mqttErrorEnabled")){
-      g_errorFeedbackSettings.mqttErrorEnabled=currentJson["mqttErrorEnabled"];
-    }
-    if(currentJson.containsKey("mqttWarningEnabled")){
-      g_errorFeedbackSettings.mqttWarningEnabled=currentJson["mqttWarningEnabled"];
-    }
-    writeConfigToEeprom();
-    g_server.send(200,F("text/html"), "OK");
-
-  }else if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to Error and Warning Configuration");
-    String payload="{";
-    payload+="\"httpErrorEnabled\":";
-    if(g_errorFeedbackSettings.httpErrorEnabled) payload+="true,";
-    else payload+="false,";
-    payload+="\"httpWarningEnabled\":";
-    if(g_errorFeedbackSettings.httpWarningEnabled) payload+="true,";
-    else payload+="false,";
-    payload+="\"mqttErrorEnabled\":";
-    if(g_errorFeedbackSettings.mqttErrorEnabled) payload+="true,";
-    else payload+="false,";
-    payload+="\"mqttWarningEnabled\":";
-    if(g_errorFeedbackSettings.mqttWarningEnabled) payload+="true";
-    else payload+="false";
-    payload+="}";
     g_server.send(200, F("text/html"),payload);
   }else{
     g_server.send(405, F("text/html"),"Method Not Allowed");
@@ -1766,7 +1717,7 @@ void writeConfigToEeprom(){
     httpErrorEnabled	            67 <- Deprecated
     httpWarningEnabled	          68 <- Deprecated
     mqttErrorEnabled	            69
-    mqttWarningEnabled	          70
+    mqttWarningEnabled	          70 <- Not implemented
   */
 
   
@@ -1858,10 +1809,7 @@ void writeConfigToEeprom(){
   eepromUpdateByte(65,tempFloat.ui8[2]);  
   eepromUpdateByte(66,tempFloat.ui8[3]);
 
-  eepromUpdateByte(67,g_errorFeedbackSettings.httpErrorEnabled);
-  eepromUpdateByte(68,g_errorFeedbackSettings.httpWarningEnabled);
-  eepromUpdateByte(69,g_errorFeedbackSettings.mqttErrorEnabled);
-  eepromUpdateByte(70,g_errorFeedbackSettings.mqttWarningEnabled);
+  eepromUpdateByte(69,g_mqttConfig.errorFeedbackEnabled);
 
   Serial.println("Config written to EEPROM");
 }
@@ -1977,14 +1925,8 @@ void readConfigFromEeprom(){
   tempFloat.ui8[2]=g_eepromImage[65];
   tempFloat.ui8[3]=g_eepromImage[66];
   g_mqttConfig.feedbackPublishPeriod=tempFloat.f;
-
-  g_errorFeedbackSettings.httpErrorEnabled=g_eepromImage[67]!=0; // deprecated
   
-  g_errorFeedbackSettings.httpWarningEnabled=g_eepromImage[68]!=0; //deprecated
-  
-  g_errorFeedbackSettings.mqttErrorEnabled=g_eepromImage[69]!=0;
-  
-  g_errorFeedbackSettings.mqttWarningEnabled=g_eepromImage[70]!=0;
+  g_mqttConfig.errorFeedbackEnabled=g_eepromImage[69]!=0;
 
   // Updating slave according to what was read : 
   i2cSetHardwareConfig(g_motorStepsPerRev.i32,g_encoderStepsPerRev.i32,g_invertedMotor,g_invertedEncoder);
