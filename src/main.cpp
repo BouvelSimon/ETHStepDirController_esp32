@@ -49,7 +49,7 @@
 
 // I2C related defines :
 #define MAX_RECEIVE_SIZE 46
-#define EEPROM_SIZE 75 // this is the used size, not the whole size
+#define EEPROM_SIZE 75 // this is the size used for configuration (excluding mqtt credentials), not the whole size
 #define MQTT_CRED_MAXSIZE 50
 
 // Trajectory queue related defines : 
@@ -189,7 +189,6 @@ void httpRootCallback();
 void httpNotFoundCallback();
 void httpFaviconCallback();
 void httpNetworkconfigCallback();
-void httpBoardconfigCallback();
 void httpControlParamsCallback();
 void httpHwConfigCallback();
 void httpMotorStatusCallback();
@@ -230,6 +229,7 @@ void eepromUpdateByte(uint16_t, uint8_t);
 void printData(uint8_t*, uint8_t);
 bool stringIpToByte(String,uint8_t[]);
 void manageLedColor();
+String generateHomePage();
 
 // Trajectory-related global variables : 
 trajectory g_trajectoryQueue[TRAJ_BUFFER_SIZE];
@@ -246,7 +246,7 @@ uint8_t g_eepromImage[EEPROM_SIZE];
 i32_ui8 g_currentMotorPosition;
 i32_ui8 g_currentSetPoint;
 float_ui8 g_currentEncoderPosition;
-uint8_t g_nTrajSlotsAvailable;
+uint8_t g_nTrajSlotsAvailableOnSlave;
 ui16_ui8 g_curentActiveTraj;
 bool g_isMotorOn;
 bool g_closedLoopEnabled;
@@ -442,7 +442,7 @@ bool i2cGetFullData(){
   g_currentEncoderPosition.ui8[2]=receivedData[10];
   g_currentEncoderPosition.ui8[3]=receivedData[11];
 
-  g_nTrajSlotsAvailable=receivedData[12];
+  g_nTrajSlotsAvailableOnSlave=receivedData[12];
   
   g_curentActiveTraj.ui8[0]=receivedData[13];
   g_curentActiveTraj.ui8[1]=receivedData[14];
@@ -498,7 +498,7 @@ bool i2cGetMotionData(){
   // g_currentMotorPosition;
   // g_currentSetPoint;
   // g_currentEncoderPosition;
-  // g_nTrajSlotsAvailable;
+  // g_nTrajSlotsAvailableOnSlave;
   // g_curentActiveTraj;
   // g_isMotorOn;
   // g_closedLoopEnabled;
@@ -527,7 +527,7 @@ bool i2cGetMotionData(){
   g_currentEncoderPosition.ui8[2]=receivedData[10];
   g_currentEncoderPosition.ui8[3]=receivedData[11];
 
-  g_nTrajSlotsAvailable=receivedData[12];
+  g_nTrajSlotsAvailableOnSlave=receivedData[12];
   
   g_curentActiveTraj.ui8[0]=receivedData[13];
   g_curentActiveTraj.ui8[1]=receivedData[14];
@@ -783,7 +783,7 @@ void updateTrajectoryQueue(){
   if(g_trajEmptySlotIndex==0)
     return; // There is nothing to send
   
-  if(g_nTrajSlotsAvailable==0)
+  if(g_nTrajSlotsAvailableOnSlave==0)
     return; // There is no slot on the slave to receive a trajectory
 
   i2cSendTrajPoint( nextPointToBeTransmitted,
@@ -859,7 +859,6 @@ void initializeEthernetConnection()
   g_server.on(F("/"), httpRootCallback);
   g_server.on(F("/favicon.ico"),httpFaviconCallback);
   g_server.on(F("/networkConfig"),httpNetworkconfigCallback);
-  g_server.on(F("/boardConfig"),httpBoardconfigCallback);
   g_server.on(F("/controlParameters"),httpControlParamsCallback);
   g_server.on(F("/hardwareConfig"),httpHwConfigCallback);
   g_server.on(F("/motor"),httpMotorStatusCallback);
@@ -928,9 +927,7 @@ void initializeMqttConnection(){
 //                           HTTP callbacks functions
 // ************************************************************************************
 void httpRootCallback(){
-  String currentpage="";
-  currentpage+="Coucou";
-
+  String currentpage=generateHomePage();
 
   g_server.send(200, F("text/html"),currentpage);
   Serial.println("Received root request");
@@ -992,44 +989,6 @@ void httpNetworkconfigCallback(){
     payload+="\"ipAddress\":\""+String(g_networkConfig.ip[0])+"."+String(g_networkConfig.ip[1])+"."+String(g_networkConfig.ip[2])+"."+String(g_networkConfig.ip[3])+"\",";
     payload+="\"gatewayIp\":\""+String(g_networkConfig.gatewayIp[0])+"."+String(g_networkConfig.gatewayIp[1])+"."+String(g_networkConfig.gatewayIp[2])+"."+String(g_networkConfig.gatewayIp[3])+"\",";
     payload+="\"networkMasks\":\""+String(g_networkConfig.masks[0])+"."+String(g_networkConfig.masks[1])+"."+String(g_networkConfig.masks[2])+"."+String(g_networkConfig.masks[3])+"\"";
-    payload+='}';
-    g_server.send(200, F("text/html"),payload);
-    return;
-  }
-  g_server.send(405, F("text/html"),"Method Not Allowed");
-}
-
-void httpBoardconfigCallback(){
-  if(g_server.method()==HTTP_PUT){
-    Serial.println("Incoming PUT to board configuration");
-    String payload=g_server.arg("plain");
-    DynamicJsonDocument currentJson(512);
-    DeserializationError jsonErr=deserializeJson(currentJson, payload);
-    if(jsonErr){
-      Serial.print("JSON error : ");
-      Serial.println(jsonErr.c_str());
-      g_server.send(400,F("text/html"), "Bad Request");
-      return;
-    }
-
-    if(currentJson.containsKey("boardNumber")){
-      if(currentJson["boardNumber"]<0)
-        g_boardNumber=0;
-      else if(currentJson["boardNumber"]>99)
-        g_boardNumber=99;
-      else 
-        g_boardNumber=currentJson["boardNumber"];
-      // must reboot, as it may change the mqtt subscription. There must be a smarter way of doing this
-    }
-
-    writeConfigToEeprom();
-    g_server.send(200, F("text/html"),"Received");
-    return;
-
-  }else if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to board configuration");
-    String payload="{";
-    payload+="\"boardNumber\":"+String(g_boardNumber);
     payload+='}';
     g_server.send(200, F("text/html"),payload);
     return;
@@ -1380,6 +1339,16 @@ void httpMqttConfigCallback(){
       g_mqttConfig.enabled=currentJson["mqttEnabled"];
     }
 
+    if(currentJson.containsKey("boardNumber")){
+      if(currentJson["boardNumber"]<0)
+        g_boardNumber=0;
+      else if(currentJson["boardNumber"]>99)
+        g_boardNumber=99;
+      else 
+        g_boardNumber=currentJson["boardNumber"];
+      // must reboot, as it may change the mqtt subscription. There must be a smarter way of doing this
+    }
+
     if(currentJson.containsKey("positionFeedbackEnabled")){
       g_mqttConfig.positionFeedbackEnabled=currentJson["positionFeedbackEnabled"];
     }
@@ -1425,6 +1394,7 @@ void httpMqttConfigCallback(){
     payload+="\"mqttEnabled\":";
     if(g_mqttConfig.enabled) payload+="true,";
     else payload+="false,";
+    payload+="\"boardNumber\":"+String(g_boardNumber)+",";
     payload+="\"positionFeedbackEnabled\":";
     if(g_mqttConfig.positionFeedbackEnabled) payload+="true,";
     else payload+="false,";
@@ -1503,8 +1473,12 @@ void httpErrorAndWarningCallback(){
 void httpQueueCallback(){
   if(g_server.method()==HTTP_GET){
     Serial.println("Incoming GET to queue");
+    uint8_t nTrajSlotsAvailable=g_nTrajSlotsAvailableOnSlave+TRAJ_BUFFER_SIZE-g_trajEmptySlotIndex;
+    uint8_t nTrajSlotsOccupied=g_trajEmptySlotIndex+2-g_nTrajSlotsAvailableOnSlave;
     String payload="{";
-    payload+="\"currentQueueId\":"+String(g_curentActiveTraj.ui16);
+    payload+="\"currentQueueId\":"+String(g_curentActiveTraj.ui16)+',';
+    payload+="\"queueSlotsOccupied\":"+String(nTrajSlotsOccupied)+",";
+    payload+="\"queueSlotsAvailable\":"+String(nTrajSlotsAvailable);
     payload+="}";
     g_server.send(200, F("text/html"),payload);
   }else{
@@ -1555,8 +1529,12 @@ void publishMqttTopics(){
   String payload;
 
   if(g_curentActiveTraj.ui16!=lastCurrentQueueIdPublished){
-    payload="{";
-    payload+="\"currentQueueId\":"+String(g_curentActiveTraj.ui16);
+    uint8_t nTrajSlotsAvailable=g_nTrajSlotsAvailableOnSlave+TRAJ_BUFFER_SIZE-g_trajEmptySlotIndex;
+    uint8_t nTrajSlotsOccupied=g_trajEmptySlotIndex+2-g_nTrajSlotsAvailableOnSlave;
+    String payload="{";
+    payload+="\"currentQueueId\":"+String(g_curentActiveTraj.ui16)+',';
+    payload+="\"queueSlotsOccupied\":"+String(nTrajSlotsOccupied)+",";
+    payload+="\"queueSlotsAvailable\":"+String(nTrajSlotsAvailable);
     payload+="}";
     g_mqttClient.publish(g_mqttTopics.queue,payload.c_str());
     lastCurrentQueueIdPublished=g_curentActiveTraj.ui16;
@@ -2203,4 +2181,15 @@ void manageLedColor(){ // a tester
   digitalWrite(PIN_LEDR,LOW);
   digitalWrite(PIN_LEDG,HIGH);
   digitalWrite(PIN_LEDB,LOW);
+}
+
+// ************************************************************************************
+//                           Home page generation
+// ************************************************************************************
+
+String generateHomePage(){
+  String output="";
+
+
+  return output;
 }
