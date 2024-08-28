@@ -11,8 +11,8 @@
 #define I2C_SDA 14
 #define PICO_ADDRESS 35
 #define EEPROM_ADDRESS 80
-#define PIN_RESET_BUTTON 33
-#define PIN_LEDR 32
+#define PIN_RESET_BUTTON 32
+#define PIN_LEDR 33
 #define PIN_LEDG 5
 #define PIN_LEDB 17
 
@@ -77,7 +77,7 @@ struct mqttConfiguration{
   uint16_t brokerPort;
   bool enabled;
 
-  bool positionFeedbackEnabled;
+  bool pulseFeedbackEnabled;
   bool encoderFeedbackEnabled;
   bool setpointFeedbackEnabled;
   bool timeStampFeedbackEnabled;
@@ -102,6 +102,8 @@ struct mqttTopics{
   char motorDisableCL[28];
   char motorsGo[10];
   char motorGo[11];
+  char motorsStop[12];
+  char motorStop[13];
   char motorsAbort[13];
   char motorAbort[14];
   char feedback[17];
@@ -127,6 +129,13 @@ struct trajectory{
   uint32_t time[TRAJ_N_POINTS_MAX];
   uint8_t positionRelativity;
 };
+
+struct valuesOffset{
+  int32_t pulses;
+  float encoder;
+  int32_t time_ms;
+};
+struct valuesOffset g_valuesOffset;
 
 
 // Useful unions for conversion of variable into bytes arrays
@@ -205,6 +214,7 @@ void httpPositionCallback();
 void httpEncoderCallback();
 void httpTimestampCallback();
 void httpFeedbackCallback();
+void httpSetValuesCallback();
 void httpJogCallback();
 void httpAbortCallback();
 void httpTrajLinearCallback();
@@ -244,7 +254,7 @@ char g_deviceName[15];
 uint8_t g_eepromImage[EEPROM_SIZE];
 
 // Motion global variables : 
-i32_ui8 g_currentMotorPosition;
+i32_ui8 g_currentMotorPulses;
 i32_ui8 g_currentSetPoint;
 float_ui8 g_currentEncoderPosition;
 uint8_t g_nTrajSlotsAvailableOnSlave;
@@ -285,6 +295,10 @@ void setup() {
   pinMode(PIN_LEDG,OUTPUT);
   pinMode(PIN_LEDB,OUTPUT);
   pinMode(PIN_RESET_BUTTON,INPUT);
+
+  // entering setup : light up the LED blue :
+  digitalWrite(PIN_LEDB,HIGH);
+
   Serial.begin(9600);
   
   // I2C setup : 
@@ -329,6 +343,8 @@ void setup() {
   sprintf(g_mqttTopics.motorDisableCL,"motor%02d/closedLoop/disable",g_boardNumber);
   sprintf(g_mqttTopics.motorsGo,"motors/go");
   sprintf(g_mqttTopics.motorGo,"motor%02d/go",g_boardNumber);
+  sprintf(g_mqttTopics.motorsStop,"motors/stop");
+  sprintf(g_mqttTopics.motorStop,"motor%02d/stop",g_boardNumber);
   sprintf(g_mqttTopics.motorsAbort,"motors/abort");
   sprintf(g_mqttTopics.motorAbort,"motor%02d/abort",g_boardNumber);
   sprintf(g_mqttTopics.feedback,"motor%02d/feedback",g_boardNumber);
@@ -428,10 +444,10 @@ bool i2cGetFullData(){
     return false;
   }
 
-  g_currentMotorPosition.ui8[0]=receivedData[0];
-  g_currentMotorPosition.ui8[1]=receivedData[1];
-  g_currentMotorPosition.ui8[2]=receivedData[2];
-  g_currentMotorPosition.ui8[3]=receivedData[3];
+  g_currentMotorPulses.ui8[0]=receivedData[0];
+  g_currentMotorPulses.ui8[1]=receivedData[1];
+  g_currentMotorPulses.ui8[2]=receivedData[2];
+  g_currentMotorPulses.ui8[3]=receivedData[3];
 
   g_currentSetPoint.ui8[0]=receivedData[4];
   g_currentSetPoint.ui8[1]=receivedData[5];
@@ -496,7 +512,7 @@ bool i2cGetFullData(){
 
 bool i2cGetMotionData(){ 
   // Updates the following : 
-  // g_currentMotorPosition;
+  // g_currentMotorPulses;
   // g_currentSetPoint;
   // g_currentEncoderPosition;
   // g_nTrajSlotsAvailableOnSlave;
@@ -513,10 +529,10 @@ bool i2cGetMotionData(){
     return false;
   }
 
-  g_currentMotorPosition.ui8[0]=receivedData[0];
-  g_currentMotorPosition.ui8[1]=receivedData[1];
-  g_currentMotorPosition.ui8[2]=receivedData[2];
-  g_currentMotorPosition.ui8[3]=receivedData[3];
+  g_currentMotorPulses.ui8[0]=receivedData[0];
+  g_currentMotorPulses.ui8[1]=receivedData[1];
+  g_currentMotorPulses.ui8[2]=receivedData[2];
+  g_currentMotorPulses.ui8[3]=receivedData[3];
 
   g_currentSetPoint.ui8[0]=receivedData[4];
   g_currentSetPoint.ui8[1]=receivedData[5];
@@ -808,11 +824,10 @@ void processErrorCodes(){
   Serial.print("Error code from slave : ");
   Serial.println(g_errorCodesFromSlave);
   
-  // Do a post if http feedback is enabled
   // Do a publish if mqtt feedback is enabled
   String payload="{";
   payload+="\"code\":"+String(g_errorCodesFromSlave)+",";
-  payload+="\"timeStamp\":"+String(millis())+",";
+  payload+="\"timeStamp\":"+String((millis()+g_valuesOffset.time_ms)/1000.)+",";
   payload+="\"description\":\"";
   if(g_errorCodesFromSlave==ERRCODE_LIMITABORT){
     payload+="Error limit triggered, motion aborted. Closed loop disabled, motor off";
@@ -855,10 +870,11 @@ void initializeEthernetConnection()
   g_server.on(F("/go"),httpGoCallback);
   g_server.on(F("/stop"),httpStopCallback);
   g_server.on(F("/setPoint"),httpSetPointCallback);
-  g_server.on(F("/position"),httpPositionCallback);
+  g_server.on(F("/pulse"),httpPositionCallback);
   g_server.on(F("/encoder"),httpEncoderCallback);
   g_server.on(F("/timeStamp"),httpTimestampCallback);
   g_server.on(F("/feedback"),httpFeedbackCallback);
+  g_server.on(F("/setValues"),httpSetValuesCallback);
   g_server.on(F("/jog"),httpJogCallback);
   g_server.on(F("/abort"),httpAbortCallback);
   g_server.on(F("/trajectory/linear"),httpTrajLinearCallback);
@@ -1076,11 +1092,15 @@ void httpMotorOffCallback(){
 }
 
 void httpEnableClosedLoopCallback(){
-  g_closedLoopEnabled=true;
-  i2cSetSlaveMode(CLOSEDLOOP_MODE);
-  i2cGetFullData();
-  processErrorCodes();
-  g_server.send(200, F("text/html"),"OK");
+  if(g_encoderStepsPerRev.i32!=0){
+    g_closedLoopEnabled=true;
+    i2cSetSlaveMode(CLOSEDLOOP_MODE);
+    i2cGetFullData();
+    processErrorCodes();
+    g_server.send(200, F("text/html"),"OK");
+  }else{
+    g_server.send(409, F("text/html"),"Refused : encoder steps per revolution currently set to 0");
+  }
 }
 
 void httpDisableClosedLoopCallback(){
@@ -1142,7 +1162,11 @@ void httpSetPointCallback(){
       i2cSetPoint(g_currentSetPoint.i32+targetReceived);
       g_server.send(200, F("text/html"),"OK");
     }else{
-      i2cSetPoint(targetReceived);
+      if(!g_closedLoopEnabled){
+        i2cSetPoint(targetReceived-g_valuesOffset.pulses);
+      }else{
+        i2cSetPoint(targetReceived-g_valuesOffset.encoder);
+      }
       g_server.send(200, F("text/html"),"OK");
     }
   }else if(g_server.method()==HTTP_GET){
@@ -1158,7 +1182,7 @@ void httpPositionCallback(){
   if(g_server.method()==HTTP_GET){
     Serial.println("Incoming GET to Position");
     i2cGetMotionData();
-    g_server.send(200, F("text/html"),String(g_currentMotorPosition.i32));
+    g_server.send(200, F("text/html"),String(g_currentMotorPulses.i32));
   }else{
     g_server.send(405, F("text/html"),"Method Not Allowed");
   }
@@ -1185,16 +1209,61 @@ void httpFeedbackCallback(){
   if(g_server.method()==HTTP_GET){
     Serial.println("Incoming GET to full Feedback");
     i2cGetMotionData();
-    uint32_t currentTime=millis();
+    uint32_t currentTime=millis()+g_valuesOffset.time_ms;
     String payload="{";
-    payload+="\"position\":"+String(g_currentMotorPosition.i32)+",";
-    payload+="\"encoder\":"+String(g_currentEncoderPosition.f)+",";
+    payload+="\"pulses\":"+String(g_currentMotorPulses.i32+g_valuesOffset.pulses)+",";
+    payload+="\"encoder\":"+String(g_currentEncoderPosition.f+g_valuesOffset.encoder)+",";
     payload+="\"timeStamp\":"+String(float(currentTime/1000.))+",";
-    payload+="\"setPoint\":"+String(g_currentSetPoint.i32)+"}";
+    if(g_closedLoopEnabled){
+      payload+="\"setPoint\":"+String(g_currentSetPoint.i32+g_valuesOffset.encoder)+"}";
+    }else{
+      payload+="\"setPoint\":"+String(g_currentSetPoint.i32+g_valuesOffset.pulses)+"}";
+    }
     g_server.send(200, F("text/html"),payload);
   }else{
     g_server.send(405, F("text/html"),"Method Not Allowed");
   }
+}
+
+void httpSetValuesCallback(){
+  if(g_server.method()==HTTP_PUT){
+    Serial.println("Incoming PUT to setValues");
+    
+    String payload=g_server.arg("plain");
+    DynamicJsonDocument currentJson(512);
+    DeserializationError jsonErr=deserializeJson(currentJson, payload);
+    if(jsonErr){
+      Serial.print("JSON error : ");
+      Serial.println(jsonErr.c_str());
+      g_server.send(400,F("text/html"), "Bad Request");
+      return;
+    }
+
+    if(currentJson.containsKey("pulses")){
+      g_valuesOffset.pulses=currentJson["pulses"];
+      g_valuesOffset.pulses-=g_currentMotorPulses.i32;
+    }
+
+    if(currentJson.containsKey("encoder")){
+      g_valuesOffset.encoder=currentJson["encoder"];
+      g_valuesOffset.encoder-=g_currentEncoderPosition.f;
+    }
+
+    if(currentJson.containsKey("timeStamp")){
+      g_valuesOffset.time_ms=currentJson["timeStamp"];
+      g_valuesOffset.time_ms=g_valuesOffset.time_ms*1000-millis();
+    }
+
+    Serial.println(g_valuesOffset.pulses);
+    Serial.println(g_valuesOffset.encoder);
+    Serial.println(g_valuesOffset.time_ms);
+    
+
+    g_server.send(200, F("text/html"),"OK");
+  }else{
+    g_server.send(405, F("text/html"),"Method Not Allowed");
+  }
+
 }
 
 void httpJogCallback(){
@@ -1291,6 +1360,12 @@ void httpTrajLinearCallback(){
 
   for(uint8_t i=0;i<nPositionsReceived;i++){
     currentTraj.position[i]=positionsReceived[i];
+    if(currentTraj.positionRelativity==ABSOLUTE_POSITION && g_closedLoopEnabled){
+      currentTraj.position[i]-=g_valuesOffset.encoder;
+    }
+    if(currentTraj.positionRelativity==ABSOLUTE_POSITION && !g_closedLoopEnabled){
+      currentTraj.position[i]-=g_valuesOffset.pulses;
+    }
     currentTraj.time[i]=timesReceived[i]*1000; // received in seconds from the JSON, but processed in milliseconds elsewhere
   }
   addTrajectoryToQueue(currentTraj);
@@ -1334,8 +1409,8 @@ void httpMqttConfigCallback(){
       // must reboot, as it may change the mqtt subscription. There must be a smarter way of doing this
     }
 
-    if(currentJson.containsKey("positionFeedbackEnabled")){
-      g_mqttConfig.positionFeedbackEnabled=currentJson["positionFeedbackEnabled"];
+    if(currentJson.containsKey("pulseFeedbackEnabled")){
+      g_mqttConfig.pulseFeedbackEnabled=currentJson["pulseFeedbackEnabled"];
     }
 
     if(currentJson.containsKey("encoderFeedbackEnabled")){
@@ -1387,12 +1462,8 @@ void httpMqttConfigCallback(){
 
     payload+="\"boardNumber\":"+String(g_boardNumber)+",";
 
-    payload+="\"positionFeedbackEnabled\":";
-    if(g_mqttConfig.positionFeedbackEnabled) payload+="true,";
-    else payload+="false,";
-
-    payload+="\"positionFeedbackEnabled\":";
-    if(g_mqttConfig.positionFeedbackEnabled) payload+="true,";
+    payload+="\"pulseFeedbackEnabled\":";
+    if(g_mqttConfig.pulseFeedbackEnabled) payload+="true,";
     else payload+="false,";
 
     payload+="\"encoderFeedbackEnabled\":";
@@ -1438,6 +1509,7 @@ void httpQueueCallback(){
 }
 
 void httpRebootCallback(){
+  g_server.send(200, F("text/html"),"OK, rebooting");
   ESP.restart();
 }
 // ************************************************************************************
@@ -1455,6 +1527,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length){
   }
   if(strcmp(topic,g_mqttTopics.motorGo)==0 || strcmp(topic,g_mqttTopics.motorsGo)==0){
     i2cGo();
+  }
+  if(strcmp(topic,g_mqttTopics.motorStop)==0 || strcmp(topic,g_mqttTopics.motorsStop)==0){
+    i2cStop();
   }
   if(strcmp(topic,g_mqttTopics.motorAbort)==0 || strcmp(topic,g_mqttTopics.motorsAbort)==0){
     i2cAbort();
@@ -1498,29 +1573,33 @@ void publishMqttTopics(){
   
   payload="{";
 
-  if(g_mqttConfig.positionFeedbackEnabled){
-    payload+="\"position\":"+String(g_currentMotorPosition.i32);
+  if(g_mqttConfig.pulseFeedbackEnabled){
+    payload+="\"pulses\":"+String(g_currentMotorPulses.i32+g_valuesOffset.pulses);
     if(g_mqttConfig.encoderFeedbackEnabled || g_mqttConfig.setpointFeedbackEnabled || g_mqttConfig.timeStampFeedbackEnabled){
       payload+=",";
     }
   }
 
   if(g_mqttConfig.encoderFeedbackEnabled){
-    payload+="\"encoder\":"+String(g_currentEncoderPosition.f,3);
+    payload+="\"encoder\":"+String(g_currentEncoderPosition.f+g_valuesOffset.encoder,3);
     if(g_mqttConfig.setpointFeedbackEnabled || g_mqttConfig.timeStampFeedbackEnabled){
       payload+=",";
     }
   }
 
   if(g_mqttConfig.timeStampFeedbackEnabled){
-    payload+="\"timeStamp\":"+String(millis()/1000.,3);
+    payload+="\"timeStamp\":"+String((millis()+g_valuesOffset.time_ms)/1000.,3);
     if(g_mqttConfig.setpointFeedbackEnabled){
       payload+=",";
     }
   }
 
   if(g_mqttConfig.setpointFeedbackEnabled){
-    payload+="\"setPoint\":"+String(g_currentSetPoint.i32);
+    if(g_closedLoopEnabled){
+      payload+="\"setPoint\":"+String(g_currentSetPoint.i32+g_valuesOffset.encoder);
+    }else{
+      payload+="\"setPoint\":"+String(g_currentSetPoint.i32+g_valuesOffset.pulses);
+    }
   }
 
   payload+="}";
@@ -1709,7 +1788,7 @@ void writeConfigToEeprom(){
     mqttBrokerIp	                52-55
     mqttBrokerPort	              56-57
     mqttEnabled	                  58
-    mqttPositionFeedbackEnabled	  59
+    mqttpulseFeedbackEnabled	  59
     mqttEncoderFeedbackEnabled	  60
     mqttSetPointFeedbackEnabled	  61
     mqttTimeStampFeedbackEnabled	62
@@ -1795,7 +1874,7 @@ void writeConfigToEeprom(){
   
   eepromUpdateByte(58,g_mqttConfig.enabled);
   
-  eepromUpdateByte(59,g_mqttConfig.positionFeedbackEnabled);
+  eepromUpdateByte(59,g_mqttConfig.pulseFeedbackEnabled);
 
   eepromUpdateByte(60,g_mqttConfig.encoderFeedbackEnabled);
   
@@ -1912,7 +1991,7 @@ void readConfigFromEeprom(){
 
   g_mqttConfig.enabled=g_eepromImage[58]!=0;
 
-  g_mqttConfig.positionFeedbackEnabled=g_eepromImage[59]!=0;
+  g_mqttConfig.pulseFeedbackEnabled=g_eepromImage[59]!=0;
 
   g_mqttConfig.encoderFeedbackEnabled=g_eepromImage[60]!=0;
 
@@ -2001,7 +2080,7 @@ void setDefaultConfiguration(){
   g_mqttConfig.brokerIp[3]=14;
   g_mqttConfig.brokerPort=1883;
   g_mqttConfig.enabled=false;
-  g_mqttConfig.positionFeedbackEnabled=true;
+  g_mqttConfig.pulseFeedbackEnabled=true;
   g_mqttConfig.encoderFeedbackEnabled=true;
   g_mqttConfig.setpointFeedbackEnabled=true;
   g_mqttConfig.timeStampFeedbackEnabled=true;
@@ -2104,7 +2183,7 @@ void manageButtonPress(){
   }
 }
 
-void manageLedColor(){ // a tester
+void manageLedColor(){
   
   if(!g_ethClient.connected()){
     digitalWrite(PIN_LEDR,HIGH);
