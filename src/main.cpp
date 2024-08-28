@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <I2C_eeprom.h>
+#include <analogWrite.h>
 
 // Hardware defines
 #define I2C_SCL 2
@@ -38,6 +39,7 @@
 #define MSG_GO 61
 #define MSG_ABORT 62
 #define MSG_STOP 63
+#define LEDBRIGHTNESS 30
 
 // Trajectory types : 
 #define TRAJTYPE_DEFAULT 0
@@ -297,7 +299,7 @@ void setup() {
   pinMode(PIN_RESET_BUTTON,INPUT);
 
   // entering setup : light up the LED blue :
-  digitalWrite(PIN_LEDB,HIGH);
+  analogWrite(PIN_LEDB,LEDBRIGHTNESS);
 
   Serial.begin(9600);
   
@@ -329,8 +331,6 @@ void setup() {
   g_lastTrajectoryIdReceived=0;
   g_boardNumber=0;
   sprintf(g_deviceName,"DirStepBoard%02d",g_boardNumber);
-
-  
 
   // initializing mqtt topics : 
   sprintf(g_mqttTopics.motorsOn,"motors/on");
@@ -2167,14 +2167,14 @@ void manageButtonPress(){
   static uint32_t lastButtonPressDate;
   if(digitalRead(PIN_RESET_BUTTON)==LOW){
     if(millis()-lastButtonPressDate>3000){
-      digitalWrite(PIN_LEDG,LOW);
-      digitalWrite(PIN_LEDR,LOW);
-      digitalWrite(PIN_LEDB,HIGH); delay(200);
-      digitalWrite(PIN_LEDB,LOW); delay(200);
-      digitalWrite(PIN_LEDB,HIGH); delay(200);
-      digitalWrite(PIN_LEDB,LOW); delay(200);
-      digitalWrite(PIN_LEDB,HIGH); delay(200);
-      digitalWrite(PIN_LEDB,LOW); delay(200);
+      analogWrite(PIN_LEDG,0);
+      analogWrite(PIN_LEDR,0);
+      analogWrite(PIN_LEDB,LEDBRIGHTNESS); delay(200);
+      analogWrite(PIN_LEDB,0); delay(200);
+      analogWrite(PIN_LEDB,LEDBRIGHTNESS); delay(200);
+      analogWrite(PIN_LEDB,0); delay(200);
+      analogWrite(PIN_LEDB,LEDBRIGHTNESS); delay(200);
+      analogWrite(PIN_LEDB,0); delay(200);
       setDefaultConfiguration();
       ESP.restart();
 	  }
@@ -2186,22 +2186,22 @@ void manageButtonPress(){
 void manageLedColor(){
   
   if(!g_ethClient.connected()){
-    digitalWrite(PIN_LEDR,HIGH);
-    digitalWrite(PIN_LEDG,HIGH);
-    digitalWrite(PIN_LEDB,LOW);
+    analogWrite(PIN_LEDR,LEDBRIGHTNESS);
+    analogWrite(PIN_LEDG,LEDBRIGHTNESS);
+    analogWrite(PIN_LEDB,0);
     return;
   }
 	
   if(g_mqttConfig.enabled && !g_mqttClient.connected()){
-    digitalWrite(PIN_LEDR,HIGH);
-    digitalWrite(PIN_LEDG,LOW);
-    digitalWrite(PIN_LEDB,HIGH);
+    analogWrite(PIN_LEDR,LEDBRIGHTNESS);
+    analogWrite(PIN_LEDG,0);
+    analogWrite(PIN_LEDB,LEDBRIGHTNESS);
     return;
   }
 
-  digitalWrite(PIN_LEDR,LOW);
-  digitalWrite(PIN_LEDG,HIGH);
-  digitalWrite(PIN_LEDB,LOW);
+  analogWrite(PIN_LEDR,0);
+  analogWrite(PIN_LEDG,LEDBRIGHTNESS);
+  analogWrite(PIN_LEDB,0);
 }
 
 // ************************************************************************************
