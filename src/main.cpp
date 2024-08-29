@@ -2197,7 +2197,7 @@ void manageButtonPress(){
 
 void manageLedColor(){
   
-  if(!g_ethClient.connected()){
+  if(!WT32_ETH01_eth_connected){
     analogWrite(PIN_LEDR,LEDBRIGHTNESS);
     analogWrite(PIN_LEDG,LEDBRIGHTNESS);
     analogWrite(PIN_LEDB,0);
