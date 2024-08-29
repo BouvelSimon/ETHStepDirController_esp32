@@ -1138,7 +1138,7 @@ void httpSetPointCallback(){
   if(g_server.method()==HTTP_POST){
     Serial.println("Incoming POST to setPoint");
     String payload=g_server.arg("plain");
-    DynamicJsonDocument currentJson(512);
+    JsonDocument currentJson;
     DeserializationError jsonErr=deserializeJson(currentJson, payload);
     if(jsonErr){
       Serial.print("JSON error : ");
@@ -1241,7 +1241,7 @@ void httpSetValuesCallback(){
     Serial.println("Incoming PUT to setValues");
     
     String payload=g_server.arg("plain");
-    DynamicJsonDocument currentJson(512);
+    JsonDocument currentJson;
     DeserializationError jsonErr=deserializeJson(currentJson, payload);
     if(jsonErr){
       Serial.print("JSON error : ");
@@ -1281,7 +1281,7 @@ void httpJogCallback(){
   if(g_server.method()==HTTP_POST){
     Serial.println("Incoming POST to jog");
     String payload=g_server.arg("plain");
-    DynamicJsonDocument currentJson(512);
+    JsonDocument currentJson;
     DeserializationError jsonErr=deserializeJson(currentJson, payload);
     if(jsonErr){
       Serial.print("JSON error : ");
@@ -1311,7 +1311,7 @@ void httpAbortCallback(){
 void httpTrajLinearCallback(){
   Serial.println("Incoming POST to Linear Trajectory");
   String payload=g_server.arg("plain");
-  DynamicJsonDocument currentJson(512);
+  JsonDocument currentJson;
   DeserializationError jsonErr=deserializeJson(currentJson, payload);
   if(jsonErr){
     Serial.print("JSON error : ");
@@ -1388,7 +1388,7 @@ void httpMqttConfigCallback(){
     Serial.println("Incoming PUT to Mqtt Configuration");
     String payload=g_server.arg("plain");
     Serial.println(payload);
-    DynamicJsonDocument currentJson(512);
+    JsonDocument currentJson;
     DeserializationError jsonErr=deserializeJson(currentJson, payload);
     if(jsonErr){
       Serial.print("JSON error : ");
@@ -1628,7 +1628,7 @@ void publishMqttTopics(){
 //                           Setters from JSON functions
 // ************************************************************************************
 bool setNetworkConfigFromJson(String inputJsonString){
-  DynamicJsonDocument currentJson(512);
+  JsonDocument currentJson;
   DeserializationError jsonErr=deserializeJson(currentJson, inputJsonString);
   if(jsonErr){
     Serial.print("JSON error : ");
@@ -1663,7 +1663,7 @@ bool setNetworkConfigFromJson(String inputJsonString){
 }
 
 bool setControlParamsFromJson(String inputJsonString){
-  DynamicJsonDocument currentJson(512);
+  JsonDocument currentJson;
   DeserializationError jsonErr=deserializeJson(currentJson, inputJsonString);
   if(jsonErr){
     Serial.print("JSON error : ");
@@ -1703,7 +1703,7 @@ bool setControlParamsFromJson(String inputJsonString){
 }
 
 bool setHwConfigFromJson(String inputJsonString){
-  DynamicJsonDocument currentJson(512);
+  JsonDocument currentJson;
   DeserializationError jsonErr=deserializeJson(currentJson, inputJsonString);
   if(jsonErr){
     Serial.print("JSON error : ");
