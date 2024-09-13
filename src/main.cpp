@@ -40,6 +40,7 @@
 #define MSG_ABORT 62
 #define MSG_STOP 63
 #define LEDBRIGHTNESS 30
+#define MAXMAXVELOCITY 500000
 
 // Trajectory types : 
 #define TRAJTYPE_DEFAULT 0
@@ -370,6 +371,8 @@ void setup() {
   xTaskCreatePinnedToCore(mainLoop,"mainLoop",10000,NULL,0,&mainTask,0);
   xTaskCreatePinnedToCore(mqttPublishLoop,"mqttPublishTask",10000,NULL,1,&mqttPublishTask,1);
 
+  Serial.println("Size of Kp :");
+  Serial.println(sizeof(g_Kp));
 }
 
 void loop() {} // We use freertos tasks instead of loop()
@@ -1686,6 +1689,15 @@ bool setControlParamsFromJson(String inputJsonString){
   }
   if(currentJson.containsKey("maxVelocity")){
      g_maxVelocity.f=(float)currentJson["maxVelocity"];
+     if(g_maxVelocity.f<0){
+      g_maxVelocity.f=0;
+     }
+     if(g_maxVelocity.f<0){
+      g_maxVelocity.f=0;
+     }
+     if(g_maxVelocity.f>MAXMAXVELOCITY){
+      g_maxVelocity.f=MAXMAXVELOCITY;
+     }
      slaveConfigMustChange=true;
   }
   if(currentJson.containsKey("errorLimit")){
