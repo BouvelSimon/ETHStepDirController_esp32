@@ -200,6 +200,7 @@ void manageButtonPress();
 
 // http server callbacks 
 void httpRootCallback();
+void httpScopeCallback();
 void httpNotFoundCallback();
 void httpFaviconCallback();
 void httpNetworkconfigCallback();
@@ -246,6 +247,7 @@ void manageLedColor();
 
 // html related functions : 
 String generateHomePage();
+String generateScopePage();
 String generateNetworkConfigHtmlForm();
 String generateControlParamHtmlForm();
 String generateHwConfigHtmlForm();
@@ -869,9 +871,13 @@ void initializeEthernetConnection()
   while (!WT32_ETH01_eth_connected){
     delay(100);
   }
+
+  // CORS settings
+  g_server.enableCORS();
   
   // Starting the web server : 
   g_server.on(F("/"), httpRootCallback);
+  g_server.on(F("/scope"),httpScopeCallback);
   g_server.on(F("/favicon.ico"),httpFaviconCallback);
   g_server.on(F("/networkConfig"),httpNetworkconfigCallback);
   g_server.on(F("/controlParameters"),httpControlParamsCallback);
@@ -944,6 +950,13 @@ void initializeMqttConnection(){
 void httpRootCallback(){
   Serial.println("Received root request");
   String currentpage=generateHomePage();
+
+  g_server.send(200, F("text/html"),currentpage);
+}
+
+void httpScopeCallback(){
+  Serial.println("Received scope request");
+  String currentpage=generateScopePage();
 
   g_server.send(200, F("text/html"),currentpage);
 }
@@ -2257,6 +2270,14 @@ String generateHomePage(){
   ;
 
   output+="\n</container>\n</body>\n</html>";
+  return output;
+}
+
+String generateScopePage(){
+  String output="";
+  output+=
+    #include "scopePage.h"
+  ;
   return output;
 }
 
