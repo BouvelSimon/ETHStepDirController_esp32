@@ -75,7 +75,7 @@ R"html(
         let intervalId;
 
         function fetchJSONData() {
-            return fetch('http://192.168.1.12/feedback', {
+            return fetch('http://{{IP_ADDRESS}}/feedback', {
                 method: 'GET',
                 headers: {'Content-Type': 'application/json'},
                 mode: 'cors' // Explicitly set CORS mode

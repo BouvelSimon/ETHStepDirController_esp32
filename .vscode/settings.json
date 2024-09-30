@@ -4,6 +4,8 @@
         "string_view": "cpp",
         "initializer_list": "cpp",
         "utility": "cpp",
-        "cstdlib": "cpp"
+        "cstdlib": "cpp",
+        "*.tcc": "cpp",
+        "string": "cpp"
     }
 }
