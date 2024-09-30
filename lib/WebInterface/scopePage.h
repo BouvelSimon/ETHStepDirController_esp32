@@ -6,23 +6,77 @@ R"html(
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Data vs Time Display</title>
     <style>
+        body {
+            font-family: 'Roboto', Arial, sans-serif;
+            background-color: #0a0a0a;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            background-image: linear-gradient(45deg, #0a0a0a 25%, #0f0f0f 25%, #0f0f0f 50%, #0a0a0a 50%, #0a0a0a 75%, #0f0f0f 75%, #0f0f0f 100%);
+            background-size: 40px 40px;
+        }
+        h1 {
+            color: #b0b0b0;
+            margin-bottom: 20px;
+        }
         canvas {
-            border: 1px solid black;
+            border: 1px solid #333;
+            background-color: #f0f0f0;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
         }
         #controls {
             margin: 20px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
         }
         #latestValues {
             margin-top: 20px;
             font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
         }
         #latestValues span {
             display: block;
             margin: 5px 0;
+            color: #b0b0b0;
         }
         #displayContainer {
             display: flex;
             justify-content: space-between;
+            flex-wrap: wrap;
+        }
+        label {
+            font-weight: 500;
+            color: #b0b0b0;
+            font-size: 0.9em;
+            letter-spacing: 0.3px;
+        }
+        input[type="number"], input[type="checkbox"] {
+            background-color: #252525;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #e0e0e0;
+            padding: 5px;
+            font-size: 13px;
+        }
+        input[type="number"]:focus, input[type="checkbox"]:focus {
+            outline: none;
+            border-color: #4a4a4a;
+            box-shadow: 0 0 0 2px rgba(74, 74, 74, 0.3);
+        }
+        @keyframes subtle-glow {
+            0% { box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); }
+            50% { box-shadow: 0 4px 20px rgba(30, 30, 30, 0.4); }
+            100% { box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); }
+        }
+        #latestValues, canvas {
+            animation: subtle-glow 5s infinite alternate;
         }
     </style>
 </head>
@@ -31,7 +85,7 @@ R"html(
 
     <div id="controls">
         <label for="refreshRate">Refresh Rate (ms):</label>
-        <input type="number" id="refreshRate" value="1000" min="20" step="20">
+        <input type="number" id="refreshRate" value="100" min="20" step="20">
 
         <label for="timeWindow">Time Window (seconds):</label>
         <input type="number" id="timeWindow" value="30" min="1" step="1">
