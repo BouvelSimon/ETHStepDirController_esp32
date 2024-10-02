@@ -492,6 +492,11 @@ void httpMotorStatusCallback(){
 }
 
 void httpMotorOnCallback(){
+  if(g_closedLoopEnabled){
+    i2cSetPoint((int32_t)g_currentEncoderPosition.f);
+  } else {
+    i2cSetPoint(g_currentMotorPulses.i32);
+  }
   i2cMotorOn();
   i2cGetFullData();
   processErrorCodes();
