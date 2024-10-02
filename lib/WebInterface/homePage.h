@@ -262,12 +262,12 @@ R"html(
       </div>
       <div class="form-container">
         <h2 id="motorPower">Motor is ...</h2>
-        <form method="put" target="hiddenFrame" onsubmit="motorOn()" style="display: inline;">
+        <form method="put" target="hiddenFrame" onsubmit="motorOn(event)" style="display: inline;">
           <div class="form-group">
             <input type="submit" value="Turn On">
           </div>
         </form>
-        <form method="put" target="hiddenFrame" onsubmit="motorOff()" style="display: inline;">
+        <form method="put" target="hiddenFrame" onsubmit="motorOff(event)" style="display: inline;">
           <div class="form-group">
             <input type="submit" value="Turn Off">
           </div>
@@ -275,12 +275,12 @@ R"html(
       </div>
       <div class="form-container">
         <h2 id="closedLoop">Closed loop : ...</h2>
-        <form method="put" target="hiddenFrame" onsubmit="enableClosedLoop()" style="display: inline;">
+        <form method="put" target="hiddenFrame" onsubmit="enableClosedLoop(event)" style="display: inline;">
           <div class="form-group">
             <input type="submit" value="Enable closed loop">
           </div>
         </form>
-        <form method="put" target="hiddenFrame" onsubmit="disableClosedLoop()" style="display: inline;">
+        <form method="put" target="hiddenFrame" onsubmit="disableClosedLoop(event)" style="display: inline;">
           <div class="form-group">
             <input type="submit" value="Disable closed loop">
           </div>
@@ -288,7 +288,7 @@ R"html(
       </div>
       <div class='form-container'>
         <h2>Basic Position</h2>
-        <form method='post' target='hiddenFrame' onsubmit='setPoint()'>
+        <form method='post' target='hiddenFrame' onsubmit='setPoint(event)'>
           <div class='form-group'>
             <label>Target</label>
             <input type='text' id='setPointTarget'>
@@ -304,14 +304,14 @@ R"html(
       </div>
       <div class='form-container'>
         <h2>Basic Velocity</h2>
-        <form method='post' target='hiddenFrame' onsubmit='jog()'>
+        <form method='post' target='hiddenFrame' onsubmit='jog(event)'>
           <div class='form-group'>
             <label>Velocity</label>
             <input type='text' id='setVelocity'>
             <input type='submit' value='Go'>
           </div>
         </form>
-        <form method="put" target="hiddenFrame" onsubmit="jogZero()" style="display: inline;">
+        <form method="put" target="hiddenFrame" onsubmit="jogZero(event)" style="display: inline;">
           <div class="form-group">
             <input type="submit" value="Stop">
           </div>
@@ -494,7 +494,10 @@ R"html(
           getHwConfig();
         }
 
-        function motorOn() {
+        function motorOn(event) {
+          if (event) {
+            event.preventDefault();
+          }
           fetch("http://{{IP_ADDRESS}}/motor/on", {
             method: "POST",
             body: ""
@@ -502,7 +505,10 @@ R"html(
           updateMotorStatus()
         }
 
-        function motorOff() {
+        function motorOff(event) {
+          if (event) {
+            event.preventDefault();
+          }
           fetch("http://{{IP_ADDRESS}}/motor/off", {
             method: "POST",
             body: ""
@@ -510,7 +516,10 @@ R"html(
           updateMotorStatus();
         }
 
-        function enableClosedLoop() {
+        function enableClosedLoop(event) {
+          if (event) {
+            event.preventDefault();
+          }
           fetch("http://{{IP_ADDRESS}}/motor/closedLoop/enable", {
             method: "POST",
             body: ""
@@ -518,7 +527,10 @@ R"html(
           updateMotorStatus();
         }
 
-        function disableClosedLoop() {
+        function disableClosedLoop(event) {
+          if (event) {
+            event.preventDefault();
+          }
           fetch("http://{{IP_ADDRESS}}/motor/closedLoop/disable", {
             method: "POST",
             body: ""
@@ -547,7 +559,10 @@ R"html(
           }
         }
 
-        function setPoint() {
+        function setPoint(event) {
+          if (event) {
+            event.preventDefault();
+          }
           var target = document.getElementById("setPointTarget").value;
           const selectedOption = document.querySelector('input[name="setPointRelativity"]:checked');
           const id = selectedOption.id;
@@ -564,7 +579,10 @@ R"html(
           });
         }
 
-        function jog() {
+        function jog(event) {
+          if (event) {
+            event.preventDefault();
+          }
           var velocity = document.getElementById("setVelocity").value;
           var plainJSON = '{';
           plainJSON += '"velocity":' + velocity + '}';
@@ -574,7 +592,10 @@ R"html(
           });
         }
 
-        function jogZero() {
+        function jogZero(event) {
+          if (event) {
+            event.preventDefault();
+          }
           const velocity = 0;
           var plainJSON = '{';
           plainJSON += '"velocity":' + velocity + '}';

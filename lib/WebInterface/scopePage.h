@@ -4,7 +4,7 @@ R"html(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Data vs Time Display</title>
+    <title>Values over time</title>
     <style>
         body {
             font-family: 'Roboto', Arial, sans-serif;
@@ -81,7 +81,7 @@ R"html(
     </style>
 </head>
 <body>
-    <h1>Data vs Time Display</h1>
+    <h1>Values over time</h1>
 
     <div id="controls">
         <label for="refreshRate">Refresh Rate (ms):</label>
@@ -122,78 +122,108 @@ R"html(
         const latestEncoderPosition = document.getElementById('latestEncoderPosition');
         const latestSetPoint = document.getElementById('latestSetPoint');
 
-        let motorPulsesData = [];
-        let encoderPositionData = [];
-        let setPointData = [];
-        let timeData = [];
-        let intervalId;
+        let data = [];
+        let animationId;
+        let lastFetchTime = 0;
+        let needsFullRedraw = true;
 
-        function fetchJSONData() {
-            return fetch('http://{{IP_ADDRESS}}/feedback', {
-                method: 'GET',
-                headers: {'Content-Type': 'application/json'},
-                mode: 'cors' // Explicitly set CORS mode
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.pulses !== undefined && data.encoder !== undefined && data.timeStamp !== undefined && data.setPoint !== undefined) {
+        // Offscreen canvas for background
+        const offscreenCanvas = new OffscreenCanvas(800, 400);
+        const offscreenCtx = offscreenCanvas.getContext('2d');
+
+        // Web Worker for data fetching and processing
+        const worker = new Worker(URL.createObjectURL(new Blob([`
+            let data = [];
+            let timeWindow = 30;
+
+            function fetchJSONData() {
+                return fetch('http://{{IP_ADDRESS}}/feedback', {
+                    method: 'GET',
+                    headers: {'Content-Type': 'application/json'},
+                    mode: 'cors'
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(\`HTTP error! status: \${response.status}\`);
+                    }
+                    return response.json();
+                })
+                .then(rawData => {
+                    if (rawData.pulses !== undefined && rawData.encoder !== undefined && rawData.timeStamp !== undefined && rawData.setPoint !== undefined) {
+                        return {
+                            motorPulses: rawData.pulses,
+                            encoderPosition: rawData.encoder,
+                            timeStamp: rawData.timeStamp,
+                            setPoint: rawData.setPoint
+                        };
+                    } else {
+                        throw new Error('Invalid data structure received');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching data:', error);
                     return {
-                        motorPulses: data.pulses,
-                        encoderPosition: data.encoder,
-                        timeStamp: data.timeStamp,
-                        setPoint: data.setPoint
+                        motorPulses: 0,
+                        encoderPosition: 0,
+                        timeStamp: Date.now() / 1000,
+                        setPoint: 0
                     };
-                } else {
-                    throw new Error('Invalid data structure received');
+                });
+            }
+
+            function processData() {
+                fetchJSONData().then(newData => {
+                    data.push(newData);
+                    const currentTime = newData.timeStamp;
+                    const minTime = currentTime - timeWindow;
+                    data = data.filter(d => d.timeStamp >= minTime);
+
+                    self.postMessage({type: 'newData', data: newData, fullData: data});
+                });
+            }
+
+            setInterval(processData, 100);
+
+            self.onmessage = function(e) {
+                if (e.data.type === 'updateTimeWindow') {
+                    timeWindow = e.data.timeWindow;
                 }
-            })
-            .catch(error => {
-                console.error('Error fetching data:', error);
-                document.getElementById('errorLog').textContent = `Fetch error: ${error.message}`;
-                return {
-                    motorPulses: 0,
-                    encoderPosition: 0,
-                    timeStamp: Date.now() / 1000,
-                    setPoint: 0
-                };
-            });
+            };
+        `], {type: 'text/javascript'})));
+
+        worker.onmessage = function(e) {
+            if (e.data.type === 'newData' && !freezeDisplayCheckbox.checked) {
+                updateLatestValues(e.data.data);
+                data = e.data.fullData;
+                needsFullRedraw = true;
+            }
+        };
+
+        function updateLatestValues(latestData) {
+            latestMotorPulses.textContent = `Motor Pulses: ${latestData.motorPulses}`;
+            latestEncoderPosition.textContent = `Encoder Position: ${latestData.encoderPosition}`;
+            latestSetPoint.textContent = `SetPoint: ${latestData.setPoint}`;
         }
 
-        // Draw legend
-        function drawLegend() {
-            ctx.font = '12px Arial';
-            ctx.fillStyle = 'red';
-            ctx.fillText('Motor Pulses', 680, 30);
-            ctx.fillStyle = 'green';
-            ctx.fillText('Encoder Position', 680, 50);
-            ctx.fillStyle = 'blue';
-            ctx.fillText('SetPoint', 680, 70);
-        }
+        function drawBackground(ctx, maxTime, minTime, minY, maxY) {
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Draw X and Y axis ticks and labels
-        function drawAxes(maxTime, minTime, minY, maxY) {
             ctx.strokeStyle = 'black';
             ctx.beginPath();
             ctx.moveTo(50, 0);
-            ctx.lineTo(50, canvas.height - 20); // Y-axis
-            ctx.lineTo(canvas.width, canvas.height - 20); // X-axis
+            ctx.lineTo(50, canvas.height - 20);
+            ctx.lineTo(canvas.width, canvas.height - 20);
             ctx.stroke();
 
-            // Y-axis label
             ctx.font = '14px Arial';
             ctx.fillStyle = 'black';
             ctx.save();
-            ctx.translate(20, canvas.height / 2); // Rotate the canvas for Y-axis label
+            ctx.translate(20, canvas.height / 2);
             ctx.rotate(-Math.PI / 2);
             ctx.fillText('Motor Steps', 0, 0);
             ctx.restore();
 
-            // Y-axis ticks and labels
             const yTicks = 10;
             const yRange = maxY - minY;
             const yStep = (canvas.height - 20) / yTicks;
@@ -204,143 +234,137 @@ R"html(
                 ctx.fillText(value.toFixed(0), 15, y);
                 ctx.beginPath();
                 ctx.moveTo(50, y);
-                ctx.lineTo(55, y); // Tick mark
+                ctx.lineTo(55, y);
                 ctx.stroke();
             }
 
-            // X-axis ticks and labels based on timeStamp (seconds)
             const xTicks = 5;
             const timeRange = maxTime - minTime;
             const xStep = (canvas.width - 60) / xTicks;
             for (let i = 0; i <= xTicks; i++) {
                 const x = 50 + i * xStep;
                 const timeLabel = minTime + i * (timeRange / xTicks);
-                ctx.fillText(timeLabel.toFixed(2) + 's', x - 20, canvas.height - 5);  // Display seconds with 2 decimals
+                ctx.fillText(timeLabel.toFixed(2) + 's', x - 20, canvas.height - 5);
                 ctx.beginPath();
                 ctx.moveTo(x, canvas.height - 20);
-                ctx.lineTo(x, canvas.height - 15); // Tick mark
+                ctx.lineTo(x, canvas.height - 15);
                 ctx.stroke();
             }
+
+            ctx.font = '12px Arial';
+            ctx.fillStyle = 'red';
+            ctx.fillText('Motor Pulses', 680, 30);
+            ctx.fillStyle = 'green';
+            ctx.fillText('Encoder Position', 680, 50);
+            ctx.fillStyle = 'blue';
+            ctx.fillText('SetPoint', 680, 70);
         }
 
-        // Function to draw the graph
+        function downsample(data, maxPoints) {
+            if (data.length <= maxPoints) return data;
+            const every = Math.floor(data.length / maxPoints);
+            return data.filter((_, i) => i % every === 0);
+        }
+
         function drawGraph() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (data.length === 0) return;
 
-            const timeWindow = parseFloat(timeWindowInput.value);  // Get time window from user input
-            const currentTime = timeData.length > 0 ? timeData[timeData.length - 1] : Date.now() / 1000;
-            const minTime = currentTime - timeWindow;  // Calculate the minimum time based on the window size
-
-            // Filter data based on the time window and get min/max for Y-axis
-            const visibleIndices = timeData.map((t, i) => t >= minTime ? i : null).filter(i => i !== null);
-            
-            if (visibleIndices.length === 0) return;  // No data in range
-
-            const visibleMotorPulses = visibleIndices.map(i => motorPulsesData[i]);
-            const visibleEncoderPosition = visibleIndices.map(i => encoderPositionData[i]);
-            const visibleSetPoint = visibleIndices.map(i => setPointData[i]);
+            const timeWindow = parseFloat(timeWindowInput.value);
+            const currentTime = data[data.length - 1].timeStamp;
+            const minTime = currentTime - timeWindow;
 
             let minY = Infinity;
             let maxY = -Infinity;
 
-            if (motorPulsesCheckbox.checked && visibleMotorPulses.length) {
-                minY = Math.min(minY, ...visibleMotorPulses);
-                maxY = Math.max(maxY, ...visibleMotorPulses);
-            }
-            if (encoderPositionCheckbox.checked && visibleEncoderPosition.length) {
-                minY = Math.min(minY, ...visibleEncoderPosition);
-                maxY = Math.max(maxY, ...visibleEncoderPosition);
-            }
-            if (setPointCheckbox.checked && visibleSetPoint.length) {
-                minY = Math.min(minY, ...visibleSetPoint);
-                maxY = Math.max(maxY, ...visibleSetPoint);
-            }
+            data.forEach(d => {
+                if (motorPulsesCheckbox.checked) {
+                    minY = Math.min(minY, d.motorPulses);
+                    maxY = Math.max(maxY, d.motorPulses);
+                }
+                if (encoderPositionCheckbox.checked) {
+                    minY = Math.min(minY, d.encoderPosition);
+                    maxY = Math.max(maxY, d.encoderPosition);
+                }
+                if (setPointCheckbox.checked) {
+                    minY = Math.min(minY, d.setPoint);
+                    maxY = Math.max(maxY, d.setPoint);
+                }
+            });
 
-            // Set default range if no data is visible
             if (minY === Infinity || maxY === -Infinity) {
                 minY = 0;
-                maxY = 200; // Default Y range
+                maxY = 200;
             }
 
-            drawAxes(currentTime, minTime, minY, maxY);  // Draw the axes with dynamic Y range
-            drawLegend();  // Draw the legend
+            if (needsFullRedraw) {
+                drawBackground(offscreenCtx, currentTime, minTime, minY, maxY);
+                needsFullRedraw = false;
+            }
 
-            const plotData = (data, color) => {
-                if (data.length === 0) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(offscreenCanvas, 0, 0);
+
+            const downsampledData = downsample(data, 200);
+
+            const plotData = (getData, color) => {
                 ctx.strokeStyle = color;
                 ctx.beginPath();
-                for (let i = 0; i < data.length; i++) {
-                    if (visibleIndices[i] === undefined) continue;  // Skip data not in range
-                    const x = 50 + (timeData[visibleIndices[i]] - minTime) / (currentTime - minTime) * (canvas.width - 60);
-                    const y = canvas.height - 20 - ((data[i] - minY) / (maxY - minY)) * (canvas.height - 20);  // Adjust for axes
+                downsampledData.forEach((d, i) => {
+                    const x = 50 + (d.timeStamp - minTime) / timeWindow * (canvas.width - 60);
+                    const y = canvas.height - 20 - ((getData(d) - minY) / (maxY - minY)) * (canvas.height - 20);
                     if (i === 0) {
                         ctx.moveTo(x, y);
                     } else {
                         ctx.lineTo(x, y);
                     }
-                }
+                });
                 ctx.stroke();
             };
 
-            if (motorPulsesCheckbox.checked) plotData(visibleMotorPulses, 'red');
-            if (encoderPositionCheckbox.checked) plotData(visibleEncoderPosition, 'green');
-            if (setPointCheckbox.checked) plotData(visibleSetPoint, 'blue');
+            if (motorPulsesCheckbox.checked) plotData(d => d.motorPulses, 'red');
+            if (encoderPositionCheckbox.checked) plotData(d => d.encoderPosition, 'green');
+            if (setPointCheckbox.checked) plotData(d => d.setPoint, 'blue');
         }
 
-        // Function to fetch data and update arrays
-        function fetchData() {
-            fetchJSONData().then(data => {
-                // Extract the data from the JSON response
-                timeData.push(data.timeStamp);
-                motorPulsesData.push(data.motorPulses);
-                encoderPositionData.push(data.encoderPosition);
-                setPointData.push(data.setPoint);
-
-                // Update the latest values display
-                latestMotorPulses.textContent = `Motor Pulses: ${data.motorPulses}`;
-                latestEncoderPosition.textContent = `Encoder Position: ${data.encoderPosition}`;
-                latestSetPoint.textContent = `SetPoint: ${data.setPoint}`;
-
-                // Draw the graph with updated data
+        function animate(timestamp) {
+            if (timestamp - lastFetchTime >= parseInt(refreshRateInput.value)) {
                 drawGraph();
-            });
-        }
-
-        // Start fetching data at intervals
-        function startFetching() {
-            clearInterval(intervalId);
-            const newRate = parseInt(refreshRateInput.value);
-            if (newRate >= 20) {  // Setting a minimum limit of 20ms for refresh rate
-                intervalId = setInterval(() => {
-                    if (!freezeDisplayCheckbox.checked) {
-                        fetchData();
-                    }
-                }, newRate);
+                lastFetchTime = timestamp;
             }
+            animationId = requestAnimationFrame(animate);
         }
-        startFetching();
 
-        // Update interval when refresh rate changes
+        function startAnimation() {
+            if (animationId) cancelAnimationFrame(animationId);
+            animationId = requestAnimationFrame(animate);
+        }
+
+        startAnimation();
+
         refreshRateInput.addEventListener('change', () => {
-            startFetching();
+            if (!freezeDisplayCheckbox.checked) {
+                startAnimation();
+            }
         });
 
-        // Handle freeze display checkbox
         freezeDisplayCheckbox.addEventListener('change', () => {
             if (freezeDisplayCheckbox.checked) {
-                clearInterval(intervalId);  // Stop fetching data
+                cancelAnimationFrame(animationId);
             } else {
-                // Clear current data and restart fetching
-                timeData = [];
-                motorPulsesData = [];
-                encoderPositionData = [];
-                setPointData = [];
-                startFetching();
+                startAnimation();
             }
         });
 
-        // Redraw the graph when the time window changes
-        timeWindowInput.addEventListener('change', drawGraph);
+        timeWindowInput.addEventListener('change', () => {
+            worker.postMessage({type: 'updateTimeWindow', timeWindow: parseFloat(timeWindowInput.value)});
+            needsFullRedraw = true;
+        });
+
+        [motorPulsesCheckbox, encoderPositionCheckbox, setPointCheckbox].forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                needsFullRedraw = true;
+            });
+        });
     </script>
 </body>
 </html>

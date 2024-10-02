@@ -1,6 +1,9 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
+// Set to true if you want verbose serial output
+#define SERIAL_PRINTS false
+
 // Hardware defines
 #define I2C_SCL 2
 #define I2C_SDA 14

@@ -537,8 +537,8 @@ void readConfigFromEeprom(){
     charBuffer[i]=byteBuffer[i];
   }
   sprintf(g_mqttConfig.password,charBuffer);
-
-  Serial.println("config read from EEPROM");
+  if(SERIAL_PRINTS)
+    Serial.println("config read from EEPROM");
 }
 
 void writeConfigToEeprom(){
@@ -670,5 +670,6 @@ void writeConfigToEeprom(){
 
   eepromUpdateByte(69,g_mqttConfig.errorFeedbackEnabled);
 
-  Serial.println("Config written to EEPROM");
+  if(SERIAL_PRINTS)
+    Serial.println("Config written to EEPROM");
 }

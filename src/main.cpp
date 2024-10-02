@@ -14,6 +14,7 @@
 #include <i2cFunctions.h>
 #include <trajectory.h>
 
+
 struct valuesOffset g_valuesOffset;
 struct errorFeedbackSettings g_errorFeedbackSettings;
 struct mqttTopics g_mqttTopics;
@@ -67,7 +68,6 @@ bool setHwConfigFromJson(String);
 
 
 // Miscellanous functions declaration :
-void printData(uint8_t*, uint8_t);
 bool stringIpToByte(String,uint8_t[]);
 void manageLedColor();
 void processErrorCodes();
@@ -133,21 +133,26 @@ void setup() {
   // entering setup : light up the LED blue :
   analogWrite(PIN_LEDB,LEDBRIGHTNESS);
 
-  Serial.begin(9600);
+  if(SERIAL_PRINTS)
+    Serial.begin(9600);
   
   // I2C setup : 
-  Serial.println("Setting up I2C communication");
+  if(SERIAL_PRINTS)
+    Serial.println("Setting up I2C communication");
   while(!Wire.begin(I2C_SDA, I2C_SCL,(uint32_t)400000)) {
 	  delay(200);
   }
-  while(!i2cPing(PICO_ADDRESS)){ // the encoder reader is mandatory : we keep trying until we find it
-    Serial.println("could not reach pico, trying again in 0.1s");
+  while(!i2cPing(PICO_ADDRESS)){
+    if(SERIAL_PRINTS)
+      Serial.println("could not reach pico, trying again in 0.1s");
     delay(100);
   }
-  Serial.println("Pico communication up and running");
+  if(SERIAL_PRINTS)
+    Serial.println("Pico communication up and running");
 
   while(!i2cPing(EEPROM_ADDRESS)){
-    Serial.println("could not reach EEPROM chip, trying again in 0.1s");
+    if(SERIAL_PRINTS)
+      Serial.println("could not reach EEPROM chip, trying again in 0.1s");
     delay(100);
   }
   if(g_eeprom.readByte(0)!=42){ // This is a trick to detect if this is the first time the board is booted up
@@ -156,7 +161,8 @@ void setup() {
   }else{
     readConfigFromEeprom();
   }
-  Serial.println("EEPROM communication up and running");
+  if(SERIAL_PRINTS)
+    Serial.println("EEPROM communication up and running");
 
   // global variables initialization : 
   g_nextRequestSize=0;
@@ -273,8 +279,10 @@ void initializeHttpServer()
   g_server.onNotFound(httpNotFoundCallback);
   g_server.begin();
   
-  Serial.print(F("HTTP Server started @ IP : "));
-  Serial.println(ETH.localIP());
+  if(SERIAL_PRINTS){
+    Serial.print(F("HTTP Server started @ IP : "));
+    Serial.println(ETH.localIP());
+  }
 }
 
 void initializeMqttConnection(){
@@ -292,7 +300,8 @@ void initializeMqttConnection(){
       }
     }
     if(!g_mqttClient.connected()){
-      Serial.println("Mqtt connection failed");
+      if(SERIAL_PRINTS)
+        Serial.println("Mqtt connection failed");
       return;
     }
     g_mqttClient.subscribe(g_mqttTopics.motorOn);
@@ -307,7 +316,8 @@ void initializeMqttConnection(){
     g_mqttClient.subscribe(g_mqttTopics.motorsGo);
     g_mqttClient.subscribe(g_mqttTopics.motorAbort);
     g_mqttClient.subscribe(g_mqttTopics.motorsAbort);
-    Serial.println("Connected to mqtt");
+    if(SERIAL_PRINTS)
+      Serial.println("Connected to mqtt");
   }
 }
 
@@ -315,21 +325,24 @@ void initializeMqttConnection(){
 //                           HTTP callbacks functions
 // ************************************************************************************
 void httpRootCallback(){
-  Serial.println("Received root request");
+  if(SERIAL_PRINTS)
+    Serial.println("Received root request");
   String currentpage=generateHomePage();
 
   g_server.send(200, F("text/html"),currentpage);
 }
 
 void httpScopeCallback(){
-  Serial.println("Received scope request");
+  if(SERIAL_PRINTS)
+    Serial.println("Received scope request");
   String currentpage=generateScopePage();
 
   g_server.send(200, F("text/html"),currentpage);
 }
 
 void httpNotFoundCallback(){
-  Serial.println("not found handle!");
+  if(SERIAL_PRINTS)
+    Serial.println("not found handle!");
   String message = F("File Not Found\n\n");
   message += F("URI: ");
   message += g_server.uri();
@@ -342,7 +355,8 @@ void httpNotFoundCallback(){
     message += " " + g_server.argName(i) + ": " + g_server.arg(i) + "\n";
   }
   g_server.send(404, F("text/plain"), message);
-  Serial.println(message);
+  if(SERIAL_PRINTS)
+    Serial.println(message);
 }
 
 void httpFaviconCallback(){ // todo : this does not work, but I don't really care for now.
@@ -368,7 +382,8 @@ void httpFaviconCallback(){ // todo : this does not work, but I don't really car
 
 void httpNetworkconfigCallback(){
   if(g_server.method()==HTTP_PUT){
-    Serial.println("Incoming PUT to network configuration");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming PUT to network configuration");
     String payload=g_server.arg("plain");
     if(setNetworkConfigFromJson(payload)){
       g_server.send(200,F("text/html"), "Received");
@@ -379,7 +394,8 @@ void httpNetworkconfigCallback(){
     // Should I reboot or is there a smarter way to change IP. There must be one.
     return;
   } else if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to network configuration");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming GET to network configuration");
     String payload="{";
     payload+="\"ipAddress\":\""+String(g_networkConfig.ip[0])+"."+String(g_networkConfig.ip[1])+"."+String(g_networkConfig.ip[2])+"."+String(g_networkConfig.ip[3])+"\",";
     payload+="\"gatewayIp\":\""+String(g_networkConfig.gatewayIp[0])+"."+String(g_networkConfig.gatewayIp[1])+"."+String(g_networkConfig.gatewayIp[2])+"."+String(g_networkConfig.gatewayIp[3])+"\",";
@@ -393,7 +409,8 @@ void httpNetworkconfigCallback(){
 
 void httpControlParamsCallback(){
   if(g_server.method()==HTTP_PUT){
-    Serial.println("Incoming PUT to control Parameters");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming PUT to control Parameters");
     String payload=g_server.arg("plain");
     if(setControlParamsFromJson(payload)){
       writeConfigToEeprom();
@@ -404,7 +421,8 @@ void httpControlParamsCallback(){
       return;
     }
   }else if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to configuration");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming GET to configuration");
     String payload="{";
     payload+="\"Kp\":"+String(g_Kp.f)+",";
     payload+="\"Ki\":"+String(g_Ki.f)+",";
@@ -420,7 +438,8 @@ void httpControlParamsCallback(){
 
 void httpHwConfigCallback(){
   if(g_server.method()==HTTP_PUT){
-    Serial.println("Incoming PUT to hardware config");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming PUT to hardware config");
     String payload=g_server.arg("plain");
     if(setHwConfigFromJson(payload)){
       writeConfigToEeprom();
@@ -431,7 +450,8 @@ void httpHwConfigCallback(){
       return;
     }
   }else if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to hardware config");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming GET to hardware config");
     String payload="{";
     payload+="\"motorStepsPerRev\":";
     if(g_invertedMotor){
@@ -453,7 +473,8 @@ void httpHwConfigCallback(){
 }
 void httpMotorStatusCallback(){
   if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to Motor Status");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming GET to Motor Status");
     String payload="{";
     payload+="\"motorOn\":";
     if(g_isMotorOn) payload+="true,";
@@ -505,26 +526,31 @@ void httpDisableClosedLoopCallback(){
 }
 
 void httpGoCallback(){
-  Serial.println("Received a Go");
+  if(SERIAL_PRINTS)
+    Serial.println("Received a Go");
   i2cGo();
   g_server.send(200, F("text/html"),"OK");
 }
 
 void httpStopCallback(){
-  Serial.println("Received a Stop");
+  if(SERIAL_PRINTS)
+    Serial.println("Received a Stop");
   i2cStop();
   g_server.send(200, F("text/html"),"OK");
 }
 
 void httpSetPointCallback(){
   if(g_server.method()==HTTP_POST){
-    Serial.println("Incoming POST to setPoint");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming POST to setPoint");
     String payload=g_server.arg("plain");
     JsonDocument currentJson;
     DeserializationError jsonErr=deserializeJson(currentJson, payload);
     if(jsonErr){
-      Serial.print("JSON error : ");
-      Serial.println(jsonErr.c_str());
+      if(SERIAL_PRINTS){
+        Serial.print("JSON error : ");
+        Serial.println(jsonErr.c_str());
+      }
       g_server.send(400,F("text/html"), "Bad Request");
       return;
     }
@@ -563,7 +589,8 @@ void httpSetPointCallback(){
       g_server.send(200, F("text/html"),"OK");
     }
   }else if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to setPoint");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming GET to setPoint");
     i2cGetMotionData();
     g_server.send(200, F("text/html"),String(g_currentSetPoint.i32));
   }else{
@@ -573,7 +600,8 @@ void httpSetPointCallback(){
 
 void httpPositionCallback(){
   if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to Position");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming GET to Position");
     i2cGetMotionData();
     g_server.send(200, F("text/html"),String(g_currentMotorPulses.i32));
   }else{
@@ -583,7 +611,8 @@ void httpPositionCallback(){
 
 void httpEncoderCallback(){
   if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to Encoder");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming GET to Encoder");
     i2cGetMotionData();
     g_server.send(200, F("text/html"),String(g_currentEncoderPosition.f));
   }else{
@@ -592,7 +621,8 @@ void httpEncoderCallback(){
 }
 void httpTimestampCallback(){
   if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to timeStamp");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming GET to timeStamp");
     g_server.send(200, F("text/html"),String(float(millis()/1000.)));
   }else{
     g_server.send(405, F("text/html"),"Method Not Allowed");
@@ -600,7 +630,8 @@ void httpTimestampCallback(){
 }
 void httpFeedbackCallback(){
   if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to full Feedback");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming GET to full Feedback");
     i2cGetMotionData();
     uint32_t currentTime=millis()+g_valuesOffset.time_ms;
     String payload="{";
@@ -620,14 +651,17 @@ void httpFeedbackCallback(){
 
 void httpSetValuesCallback(){
   if(g_server.method()==HTTP_PUT){
-    Serial.println("Incoming PUT to setValues");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming PUT to setValues");
     
     String payload=g_server.arg("plain");
     JsonDocument currentJson;
     DeserializationError jsonErr=deserializeJson(currentJson, payload);
     if(jsonErr){
-      Serial.print("JSON error : ");
-      Serial.println(jsonErr.c_str());
+      if(SERIAL_PRINTS){
+        Serial.print("JSON error : ");
+        Serial.println(jsonErr.c_str());
+      }
       g_server.send(400,F("text/html"), "Bad Request");
       return;
     }
@@ -647,11 +681,6 @@ void httpSetValuesCallback(){
       g_valuesOffset.time_ms=g_valuesOffset.time_ms*1000-millis();
     }
 
-    Serial.println(g_valuesOffset.pulses);
-    Serial.println(g_valuesOffset.encoder);
-    Serial.println(g_valuesOffset.time_ms);
-    
-
     g_server.send(200, F("text/html"),"OK");
   }else{
     g_server.send(405, F("text/html"),"Method Not Allowed");
@@ -661,13 +690,16 @@ void httpSetValuesCallback(){
 
 void httpJogCallback(){
   if(g_server.method()==HTTP_POST){
-    Serial.println("Incoming POST to jog");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming POST to jog");
     String payload=g_server.arg("plain");
     JsonDocument currentJson;
     DeserializationError jsonErr=deserializeJson(currentJson, payload);
     if(jsonErr){
-      Serial.print("JSON error : ");
-      Serial.println(jsonErr.c_str());
+      if(SERIAL_PRINTS){
+        Serial.print("JSON error : ");
+        Serial.println(jsonErr.c_str());
+      }
       g_server.send(400,F("text/html"), "Bad Request");
       return;
     }
@@ -691,13 +723,16 @@ void httpAbortCallback(){
 }
 
 void httpTrajLinearCallback(){
-  Serial.println("Incoming POST to Linear Trajectory");
+  if(SERIAL_PRINTS)
+    Serial.println("Incoming POST to Linear Trajectory");
   String payload=g_server.arg("plain");
   JsonDocument currentJson;
   DeserializationError jsonErr=deserializeJson(currentJson, payload);
   if(jsonErr){
-    Serial.print("JSON error : ");
-    Serial.println(jsonErr.c_str());
+    if(SERIAL_PRINTS){
+      Serial.print("JSON error : ");
+      Serial.println(jsonErr.c_str());
+    }
     g_server.send(400,F("text/html"), "Bad Request");
     return;
   }
@@ -767,14 +802,18 @@ void httpTrajLinearCallback(){
 
 void httpMqttConfigCallback(){
   if(g_server.method()==HTTP_PUT){
-    Serial.println("Incoming PUT to Mqtt Configuration");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming PUT to Mqtt Configuration");
     String payload=g_server.arg("plain");
-    Serial.println(payload);
+    if(SERIAL_PRINTS)
+      Serial.println(payload);
     JsonDocument currentJson;
     DeserializationError jsonErr=deserializeJson(currentJson, payload);
     if(jsonErr){
-      Serial.print("JSON error : ");
-      Serial.println(jsonErr.c_str());
+      if(SERIAL_PRINTS){
+        Serial.print("JSON error : ");
+        Serial.println(jsonErr.c_str());
+      }
       g_server.send(400,F("text/html"), "Bad Request");
       return;
     }
@@ -842,7 +881,8 @@ void httpMqttConfigCallback(){
     writeConfigToEeprom();
     g_server.send(200,F("text/html"), "OK");
   }else if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to Mqtt Configuration");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming GET to Mqtt Configuration");
     String payload="{";
     payload+="\"brokerIp\":\""+String(g_mqttConfig.brokerIp[0])+"."
                               +String(g_mqttConfig.brokerIp[1])+"."
@@ -888,7 +928,8 @@ void httpMqttConfigCallback(){
 
 void httpQueueCallback(){
   if(g_server.method()==HTTP_GET){
-    Serial.println("Incoming GET to queue");
+    if(SERIAL_PRINTS)
+      Serial.println("Incoming GET to queue");
     uint8_t nTrajSlotsAvailable=g_nTrajSlotsAvailableOnSlave+TRAJ_BUFFER_SIZE-g_trajEmptySlotIndex;
     uint8_t nTrajSlotsOccupied=g_trajEmptySlotIndex+2-g_nTrajSlotsAvailableOnSlave;
     String payload="{";
@@ -910,8 +951,10 @@ void httpRebootCallback(){
 //                           MQTT callback function
 // ************************************************************************************
 void mqttCallback(char* topic, byte* payload, unsigned int length){
-  Serial.print("Incoming publication to mqtt topic : ");
-  Serial.println(topic);
+  if(SERIAL_PRINTS){
+    Serial.print("Incoming publication to mqtt topic : ");
+    Serial.println(topic);
+  }
 
   if(strcmp(topic,g_mqttTopics.motorOn)==0 || strcmp(topic,g_mqttTopics.motorsOn)==0){
     i2cMotorOn();
@@ -1009,8 +1052,10 @@ bool setNetworkConfigFromJson(String inputJsonString){
   JsonDocument currentJson;
   DeserializationError jsonErr=deserializeJson(currentJson, inputJsonString);
   if(jsonErr){
-    Serial.print("JSON error : ");
-    Serial.println(jsonErr.c_str());
+    if(SERIAL_PRINTS){
+      Serial.print("JSON error : ");
+      Serial.println(jsonErr.c_str());
+    }
     return false;
   }
     
@@ -1044,8 +1089,10 @@ bool setControlParamsFromJson(String inputJsonString){
   JsonDocument currentJson;
   DeserializationError jsonErr=deserializeJson(currentJson, inputJsonString);
   if(jsonErr){
-    Serial.print("JSON error : ");
-    Serial.println(jsonErr.c_str());
+    if(SERIAL_PRINTS){
+      Serial.print("JSON error : ");
+      Serial.println(jsonErr.c_str());
+    }
     return false;
   }
 
@@ -1093,8 +1140,10 @@ bool setHwConfigFromJson(String inputJsonString){
   JsonDocument currentJson;
   DeserializationError jsonErr=deserializeJson(currentJson, inputJsonString);
   if(jsonErr){
-    Serial.print("JSON error : ");
-    Serial.println(jsonErr.c_str());
+    if(SERIAL_PRINTS){
+      Serial.print("JSON error : ");
+      Serial.println(jsonErr.c_str());
+    }
     return false;
   }
   
@@ -1218,8 +1267,8 @@ void setDefaultConfiguration(){
   g_eeprom.writeBlock(200,usernameBytes,MQTT_CRED_MAXSIZE+1);
   g_eeprom.writeBlock(300,passwordBytes,MQTT_CRED_MAXSIZE+1);
 
-
-  Serial.println("Default config set");
+  if(SERIAL_PRINTS)
+    Serial.println("Default config set");
 
 }
 
@@ -1227,8 +1276,10 @@ void processErrorCodes(){
   if(g_errorCodesFromSlave==0){
     return;
   }
-  Serial.print("Error code from slave : ");
-  Serial.println(g_errorCodesFromSlave);
+  if(SERIAL_PRINTS){
+    Serial.print("Error code from slave : ");
+    Serial.println(g_errorCodesFromSlave);
+  }
   
   // Do a publish if mqtt feedback is enabled
   String payload="{";
@@ -1244,18 +1295,6 @@ void processErrorCodes(){
 	  g_mqttClient.publish(g_mqttTopics.errorFeedback,payload.c_str());
   }
   g_errorCodesFromSlave=0;
-}
-
-
-void printData(uint8_t* data, uint8_t size){
-  Serial.print("Data : ");
-  Serial.print(data[0]);
-  if(size>1)
-    for(uint8_t i=1;i<size;i++){
-      Serial.print(",");
-      Serial.print(data[i]);
-    }
-  Serial.println("");
 }
 
 bool stringIpToByte(String inputString,uint8_t outputByte[]){
